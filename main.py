@@ -252,11 +252,29 @@ def most_mentioned_dish(review_texts: list[str], cuisine: str | None) -> str | N
     counts.sort(reverse=True, key=lambda x: x[0])
     return counts[0][1]
 
+# ✅ Rotating “what people order” lines (human, calm, trustworthy)
+ORDER_SENTENCE_OPTIONS = [
+    "Most people mention this",
+    "Commonly mentioned by regulars",
+    "Shows up often when locals talk about this place",
+    "Mentioned repeatedly in reviews",
+    "A frequent favorite among locals",
+    "This is what people tend to order here",
+    "This comes up a lot when locals talk about the place",
+]
+
 def order_line(place_name: str, dish: str | None) -> str:
-    # gentle, confident, not pushy
+    """
+    If we found a dish from reviews:
+      Sentence — dish.
+    Otherwise:
+      a gentle fallback.
+    """
     if dish:
-        return f"Most mentioned in reviews: {dish}."
-    return "Ask staff: “What do regulars order most?”"
+        key = f"order|{place_name}|{dish}"
+        sentence = ORDER_SENTENCE_OPTIONS[stable_pick_index(key, len(ORDER_SENTENCE_OPTIONS))]
+        return f"{sentence} — {dish}."
+    return "If you’re unsure, ask what regulars order most."
 
 def build_picks(
     places: list[dict],
