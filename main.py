@@ -134,6 +134,30 @@ def is_chain(name: str) -> bool:
     name = (name or "").lower()
     return any(c in name for c in CHAIN_HINTS)
 
+# ✅ TRUST HARDENING (CLOSED): silent filtering
+def is_closed_place(p: dict) -> bool:
+    """
+    Returns True if the place looks permanently/temporarily closed.
+    Uses businessStatus when present, plus very conservative text hints.
+    """
+    status = (p.get("businessStatus") or "").strip().upper()
+    if status in {"PERMANENTLY_CLOSED", "CLOSED_TEMPORARILY"}:
+        return True
+
+    # Conservative text clues (avoid false positives):
+    name = (((p.get("displayName") or {}).get("text")) or "").strip().lower()
+    addr = (p.get("formattedAddress") or "").strip().lower()
+    blob = f"{name} {addr}"
+
+    # Only trigger on strong phrases, not generic "closed"
+    strong_phrases = [
+        "permanently closed",
+        "closed permanently",
+        "permanently-closed",
+        "closed for good",
+    ]
+    return any(ph in blob for ph in strong_phrases)
+
 def stable_pick_index(s: str, n: int) -> int:
     h = hashlib.md5(s.encode("utf-8")).hexdigest()
     return int(h[:8], 16) % n
@@ -163,7 +187,8 @@ def places_text_search(query: str, center: dict | None = None, radius_m: int | N
             "places.googleMapsUri,"
             "places.primaryType,"
             "places.types,"
-            "places.location"
+            "places.location,"
+            "places.businessStatus"
         ),
     }
     body = {"textQuery": query}
@@ -393,6 +418,10 @@ def build_picks(
 ) -> list[dict]:
     filtered = []
     for p in places:
+        # ✅ TRUST HARDENING (CLOSED): silently drop closed places early
+        if is_closed_place(p):
+            continue
+
         name = ((p.get("displayName") or {}).get("text") or "").strip()
         if not name:
             continue
