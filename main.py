@@ -103,6 +103,40 @@ DISH_KEYWORDS = {
         "chicken and waffles",
         "collard greens", "cornbread", "mac and cheese"
     ],
+
+    # drinks (for "what to order" coverage; no brands)
+    "drinks": [
+        "coffee",
+        "iced coffee",
+        "cold brew",
+        "latte",
+        "cappuccino",
+        "espresso",
+        "matcha",
+        "chai",
+        "boba",
+        "thai tea",
+        "milk tea",
+        "lemonade",
+        "agua fresca",
+        "horchata",
+        "smoothie",
+        "shake",
+        "milkshake",
+        "mocktail",
+        "cocktail",
+        "margarita",
+        "paloma",
+        "mojito",
+        "old fashioned",
+        "martini",
+        "negroni",
+        "beer",
+        "craft beer",
+        "ipa",
+        "wine",
+        "sangria",
+    ],
 }
 
 # Hype-mode: when we go past 10 miles, we show ONE of these (stable rotation)
@@ -133,30 +167,6 @@ def meters_to_miles(meters: float) -> float:
 def is_chain(name: str) -> bool:
     name = (name or "").lower()
     return any(c in name for c in CHAIN_HINTS)
-
-# ✅ TRUST HARDENING (CLOSED): silent filtering
-def is_closed_place(p: dict) -> bool:
-    """
-    Returns True if the place looks permanently/temporarily closed.
-    Uses businessStatus when present, plus very conservative text hints.
-    """
-    status = (p.get("businessStatus") or "").strip().upper()
-    if status in {"PERMANENTLY_CLOSED", "CLOSED_TEMPORARILY"}:
-        return True
-
-    # Conservative text clues (avoid false positives):
-    name = (((p.get("displayName") or {}).get("text")) or "").strip().lower()
-    addr = (p.get("formattedAddress") or "").strip().lower()
-    blob = f"{name} {addr}"
-
-    # Only trigger on strong phrases, not generic "closed"
-    strong_phrases = [
-        "permanently closed",
-        "closed permanently",
-        "permanently-closed",
-        "closed for good",
-    ]
-    return any(ph in blob for ph in strong_phrases)
 
 def stable_pick_index(s: str, n: int) -> int:
     h = hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -418,13 +428,15 @@ def build_picks(
 ) -> list[dict]:
     filtered = []
     for p in places:
-        # ✅ TRUST HARDENING (CLOSED): silently drop closed places early
-        if is_closed_place(p):
-            continue
-
         name = ((p.get("displayName") or {}).get("text") or "").strip()
         if not name:
             continue
+
+        # ✅ Silently remove closed places
+        status = (p.get("businessStatus") or "").strip().upper()
+        if status in ("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"):
+            continue
+
         if is_chain(name):
             continue
         if not matches_type_lock(p, allowed_types):
@@ -459,7 +471,7 @@ def build_picks(
         reviews = int(p.get("userRatingCount") or 0)
         conf = confidence_label(rating, reviews)
 
-        # ✅ NEW: compute distance_miles so frontend can enforce caps too
+        # compute distance_miles so frontend can enforce caps too
         distance_miles = None
         if center:
             loc = p.get("location") or {}
