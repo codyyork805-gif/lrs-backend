@@ -28,7 +28,9 @@ CHAIN_HINTS = [
 ]
 
 # If cuisine is one of these, we try to keep results within these Google place types
+# (This reduces weird matches.)
 CUISINE_TYPE_LOCK = {
+    # locked + legacy
     "pizza": {"pizza_restaurant"},
     "tacos": {"mexican_restaurant"},
     "ramen": {"ramen_restaurant", "japanese_restaurant"},
@@ -37,105 +39,343 @@ CUISINE_TYPE_LOCK = {
     "bbq": {"barbecue_restaurant"},
     "breakfast": {"breakfast_restaurant"},
     "burgers": {"hamburger_restaurant"},
+
+    # locked (your 21 list)
+    "italian": {"italian_restaurant"},
+    "japanese": {"japanese_restaurant"},
+    "mexican": {"mexican_restaurant"},
+    "chinese": {"chinese_restaurant"},
+    "indian": {"indian_restaurant"},
+    "american": {"american_restaurant"},
+    "korean": {"korean_restaurant"},
+    "french": {"french_restaurant"},
+    "greek": {"greek_restaurant"},
+    "mediterranean": {"mediterranean_restaurant"},
+    "vietnamese": {"vietnamese_restaurant"},
+    "spanish": {"spanish_restaurant"},
+    "middle eastern": {"middle_eastern_restaurant"},
+    "middle_eastern": {"middle_eastern_restaurant"},
+    "seafood": {"seafood_restaurant"},
+    "filipino": {"filipino_restaurant"},
+    "peruvian": {"peruvian_restaurant"},
+    "cajun": {"cajun_restaurant"},
+    "cajun/creole": {"cajun_restaurant"},
+    "creole": {"cajun_restaurant"},
+
+    # drinks (Phase 2 idea, but safe to support now)
+    "drinks": {"bar", "cafe", "coffee_shop"},
 }
 
 # Words we look for in reviews to guess “what to order”
 # (We only expand this list — we do NOT change the logic.)
 DISH_KEYWORDS = {
-    # existing cuisines (kept + expanded)
+    # tacos (dish-specific)
     "tacos": [
-        "birria", "al pastor", "carnitas", "carne asada", "fish taco", "shrimp taco",
-        "quesabirria", "burrito", "quesadilla", "salsa", "guacamole",
-        "barbacoa", "lengua", "pollo", "chile relleno", "pozole", "menudo"
-    ],
-    "pizza": [
-        "pepperoni", "margherita", "mushroom", "sausage", "meatball", "garlic", "pesto",
-        "white pizza", "deep dish", "thin crust", "calzone",
-        "sicilian", "grandma slice", "four cheese"
-    ],
-    "ramen": [
-        "tonkotsu", "shoyu", "miso", "spicy ramen", "chashu", "gyoza", "broth", "noodles"
-    ],
-    "sushi": [
-        "omakase", "roll", "nigiri", "sashimi", "spicy tuna", "salmon", "eel", "uni", "hand roll"
-    ],
-    "thai": [
-        "pad thai", "green curry", "red curry", "tom yum", "drunken noodles", "pad see ew", "thai tea"
-    ],
-    "bbq": [
-        "brisket", "ribs", "pulled pork", "burnt ends", "sausage", "smoked chicken", "mac and cheese",
-        "beef rib", "pork ribs", "tri tip", "smoked turkey"
-    ],
-    "breakfast": [
-        "pancakes", "waffles", "biscuits and gravy", "omelet", "eggs benedict", "hash browns",
-        "french toast", "breakfast burrito"
-    ],
-    "burgers": [
-        "burger", "cheeseburger", "fries", "onion rings", "milkshake", "smashburger", "bacon",
-        "double burger", "house burger", "patty melt", "bacon burger"
+        "tacos", "street tacos", "birria", "quesabirria", "al pastor", "carnitas",
+        "carne asada", "pollo asado", "barbacoa", "lengua", "chorizo",
+        "fish taco", "shrimp taco", "breakfast taco", "taco plate",
+        "burrito", "breakfast burrito", "california burrito", "bean and cheese",
+        "quesadilla", "mulitas", "torta", "nachos", "chips and salsa",
+        "guacamole", "salsa", "horchata", "agua fresca", "menudo",
     ],
 
-    # new cuisines (future-proof; still not brands)
+    # mexican (cuisine-broad)
+    "mexican": [
+        "tacos", "burrito", "breakfast burrito", "quesadilla", "nachos",
+        "tamales", "enchiladas", "fajitas", "carne asada", "al pastor",
+        "carnitas", "birria", "chile relleno", "pozole", "menudo",
+        "mole", "torta", "ceviche", "coctel de camaron", "aguachile",
+        "sopes", "gorditas", "tostadas", "chilaquiles", "elote",
+        "guacamole", "salsa", "horchata", "agua fresca", "margarita",
+    ],
+
+    # italian (cuisine-broad)
     "italian": [
-        "spaghetti", "meatballs", "lasagna",
-        "chicken parmesan", "eggplant parmesan",
-        "alfredo", "carbonara", "bolognese"
-    ],
-    "chinese": [
-        "dumplings", "potstickers", "fried rice",
-        "lo mein", "chow mein",
-        "kung pao chicken", "mapo tofu"
-    ],
-    "mediterranean": [
-        "shawarma", "gyro", "falafel",
-        "hummus", "kebab", "chicken shawarma"
-    ],
-    "vietnamese": [
-        "pho", "bun bo hue",
-        "vermicelli", "banh mi", "spring rolls"
-    ],
-    "steak": [
-        "ribeye", "new york strip",
-        "filet mignon", "prime rib", "steak frites"
-    ],
-    "fried chicken": [
-        "fried chicken", "hot chicken",
-        "chicken and waffles",
-        "collard greens", "cornbread", "mac and cheese"
+        "pizza", "margherita", "pepperoni", "sausage pizza", "white pizza",
+        "pasta", "spaghetti", "meatballs", "lasagna", "bolognese",
+        "carbonara", "alfredo", "pesto", "gnocchi", "ravioli",
+        "fettuccine", "penne vodka", "cacio e pepe", "clam pasta", "seafood pasta",
+        "chicken parmesan", "eggplant parmesan", "veal parmesan", "bruschetta",
+        "caprese", "calamari", "tiramisu", "cannoli", "garlic bread", "antipasto",
     ],
 
-    # drinks (for "what to order" coverage; no brands)
+    # pizza (searches often come in as "pizza" specifically)
+    "pizza": [
+        "pizza", "pepperoni", "margherita", "sausage", "meatball", "mushroom",
+        "white pizza", "sicilian", "grandma slice", "new york slice", "deep dish",
+        "thin crust", "detroit style", "wood fired", "neapolitan", "calzone",
+        "stromboli", "garlic knots", "pepperoni slice", "supreme", "hawaiian",
+        "four cheese", "buffalo chicken", "pesto", "ricotta", "prosciutto",
+        "veggie pizza", "extra crispy", "gluten free", "slice", "pie",
+    ],
+
+    # japanese (cuisine-broad)
+    "japanese": [
+        "ramen", "tonkotsu", "shoyu", "miso ramen", "spicy ramen",
+        "udon", "tempura udon", "soba", "gyoza", "karaage",
+        "katsu", "tonkatsu", "chicken katsu", "yakitori", "teriyaki",
+        "donburi", "gyudon", "oyakodon", "curry", "katsu curry",
+        "sushi", "nigiri", "sashimi", "hand roll", "roll",
+        "chirashi", "omakase", "unagi", "matcha", "mochi",
+    ],
+
+    # ramen (dish-specific)
+    "ramen": [
+        "ramen", "tonkotsu", "shoyu", "miso", "spicy ramen",
+        "tsukemen", "shio", "black garlic", "chashu", "pork belly",
+        "soft egg", "ajitama", "gyoza", "karaage", "broth",
+        "noodles", "extra noodles", "spicy miso", "garlic", "corn",
+        "butter", "narutomaki", "bamboo shoots", "bean sprouts",
+        "rice bowl", "donburi", "takoyaki", "edamame",
+        "yakitori", "tempura", "onigiri",
+    ],
+
+    # sushi (dish-specific)
+    "sushi": [
+        "sushi", "omakase", "nigiri", "sashimi", "hand roll",
+        "spicy tuna", "salmon", "eel", "unagi", "yellowtail",
+        "hamachi", "tuna", "maguro", "albacore", "shrimp",
+        "tempura roll", "california roll", "dragon roll", "rainbow roll",
+        "uni", "ikura", "scallop", "octopus", "sea urchin",
+        "miso soup", "edamame", "gyoza", "chirashi",
+        "poke", "rice bowl", "bento",
+    ],
+
+    # chinese
+    "chinese": [
+        "dumplings", "potstickers", "fried rice", "chow mein", "lo mein",
+        "kung pao chicken", "orange chicken", "general tso", "mapo tofu",
+        "sweet and sour", "hot and sour soup", "wonton soup", "wontons",
+        "bbq pork", "char siu", "pork belly", "beef and broccoli",
+        "egg rolls", "spring rolls", "dan dan noodles", "hand pulled noodles",
+        "xiao long bao", "soup dumplings", "sichuan", "spicy", "salt and pepper",
+        "tea", "boba", "milk tea", "peking duck", "scallion pancake",
+    ],
+
+    # indian
+    "indian": [
+        "butter chicken", "tikka masala", "chicken tikka", "biryani", "tandoori",
+        "naan", "garlic naan", "paratha", "samosa", "pakora",
+        "saag", "palak paneer", "paneer", "chana masala", "dal",
+        "dal makhani", "vindaloo", "korma", "madras", "curry",
+        "dosa", "idli", "sambar", "chutney", "rasam",
+        "lamb curry", "goat curry", "rogan josh", "mango lassi", "chai",
+    ],
+
+    # american / comfort
+    "american": [
+        "burger", "cheeseburger", "smashburger", "double burger", "fries",
+        "onion rings", "milkshake", "fried chicken", "wings", "tenders",
+        "bbq", "brisket", "ribs", "pulled pork", "mac and cheese",
+        "biscuits and gravy", "pancakes", "waffles", "french toast", "hash browns",
+        "breakfast burrito", "omelet", "eggs benedict", "steak", "ribeye",
+        "prime rib", "meatloaf", "grilled cheese", "chili", "clam chowder",
+    ],
+
+    # burgers (dish-specific)
+    "burgers": [
+        "burger", "cheeseburger", "smashburger", "double burger", "bacon burger",
+        "mushroom burger", "patty melt", "fries", "curly fries", "sweet potato fries",
+        "onion rings", "milkshake", "shake", "house burger", "classic burger",
+        "lettuce wrap", "chicken sandwich", "spicy chicken sandwich",
+        "sliders", "loaded fries", "garlic fries", "chili fries",
+        "bbq burger", "jalapeno burger", "avocado burger", "blue cheese",
+        "truffle fries", "mac and cheese", "tater tots", "combo", "kids burger",
+    ],
+
+    # bbq (broad)
+    "bbq": [
+        "bbq", "brisket", "ribs", "pulled pork", "burnt ends",
+        "sausage", "smoked chicken", "smoked turkey", "tri tip", "beef rib",
+        "pork ribs", "rib plate", "bbq sandwich", "bbq sauce", "dry rub",
+        "mac and cheese", "coleslaw", "baked beans", "cornbread", "potato salad",
+        "smoked mac", "pickles", "jalapeno", "hot links", "smokehouse",
+        "bbq platter", "brisket sandwich", "pulled pork sandwich", "banana pudding", "peach cobbler",
+    ],
+
+    # thai
+    "thai": [
+        "pad thai", "pad see ew", "drunken noodles", "tom yum", "tom kha",
+        "green curry", "red curry", "panang curry", "massaman curry", "thai basil",
+        "basil chicken", "larb", "papaya salad", "som tam", "fried rice",
+        "thai fried rice", "crispy pork", "satay", "spring rolls", "egg rolls",
+        "pad kra pao", "pad prik king", "thai tea", "sticky rice", "mango sticky rice",
+        "coconut rice", "boat noodles", "noodles", "spicy", "mild",
+    ],
+
+    # korean
+    "korean": [
+        "kbbq", "korean bbq", "bulgogi", "galbi", "short ribs",
+        "bibimbap", "kimchi", "kimchi stew", "soondubu", "tofu stew",
+        "tteokbokki", "kimbap", "japchae", "fried chicken", "korean fried chicken",
+        "ramen", "budae jjigae", "naengmyeon", "cold noodles", "mandu",
+        "pajeon", "kimchi pancakes", "bossam", "samgyeopsal", "pork belly",
+        "ssam", "banchan", "gochujang", "soju", "rice cakes",
+    ],
+
+    # vietnamese
+    "vietnamese": [
+        "pho", "bun bo hue", "banh mi", "spring rolls", "egg rolls",
+        "vermicelli", "bun", "rice plate", "com tam", "broken rice",
+        "grilled pork", "lemongrass chicken", "shaking beef", "bo luc lac",
+        "bun cha", "bun rieu", "noodle soup", "fish sauce", "nuoc cham",
+        "goi", "papaya salad", "fried rice", "garlic noodles", "pork belly",
+        "shrimp", "beef pho", "chicken pho", "iced coffee", "ca phe sua da",
+        "milk tea", "boba", "che",
+    ],
+
+    # greek
+    "greek": [
+        "gyro", "souvlaki", "falafel", "hummus", "tzatziki",
+        "greek salad", "spanakopita", "moussaka", "lamb", "chicken pita",
+        "pita", "feta", "dolma", "dolmades", "baklava",
+        "skewer", "kebab", "rice plate", "lemon chicken", "avgolemono",
+        "orzo", "grilled octopus", "calamari", "fries", "pita chips",
+        "dip", "meze", "tzatziki sauce", "shawarma", "tzatziki bowl",
+    ],
+
+    # mediterranean (broad)
+    "mediterranean": [
+        "shawarma", "gyro", "falafel", "hummus", "kebab",
+        "pita", "rice bowl", "chicken shawarma", "beef shawarma", "lamb",
+        "tzatziki", "garlic sauce", "toum", "tabbouleh", "fattoush",
+        "greek salad", "baba ganoush", "dolma", "grape leaves", "lentil soup",
+        "spanakopita", "halal plate", "chicken plate", "kofta", "kofte",
+        "baklava", "knafeh", "labneh", "zaatar", "manakish",
+    ],
+
+    # middle eastern (broad)
+    "middle eastern": [
+        "shawarma", "falafel", "hummus", "kebab", "kofta",
+        "pita", "toum", "garlic sauce", "tabbouleh", "fattoush",
+        "baba ganoush", "labneh", "zaatar", "manakish", "kibbeh",
+        "mujadara", "lentil soup", "chicken plate", "beef plate", "rice plate",
+        "knafeh", "baklava", "sfiha", "sumac", "pickles",
+        "grape leaves", "dolma", "shish tawook", "harissa", "pomegranate",
+    ],
+    "middle_eastern": [
+        "shawarma", "falafel", "hummus", "kebab", "kofta",
+        "pita", "toum", "garlic sauce", "tabbouleh", "fattoush",
+        "baba ganoush", "labneh", "zaatar", "manakish", "kibbeh",
+        "mujadara", "lentil soup", "chicken plate", "beef plate", "rice plate",
+        "knafeh", "baklava", "sfiha", "sumac", "pickles",
+        "grape leaves", "dolma", "shish tawook", "harissa", "pomegranate",
+    ],
+
+    # french
+    "french": [
+        "croissant", "baguette", "quiche", "crepe", "galette",
+        "onion soup", "french onion soup", "steak frites", "duck confit", "coq au vin",
+        "bouillabaisse", "salad nicoise", "escargot", "moules frites", "brie",
+        "cheese plate", "charcuterie", "ratatouille", "cassoulet", "creme brulee",
+        "tarte tatin", "macarons", "bistro", "pate", "terrine",
+        "cafe", "espresso", "latte", "pain au chocolat", "omelet",
+    ],
+
+    # spanish
+    "spanish": [
+        "tapas", "paella", "patatas bravas", "croquetas", "jamon",
+        "tortilla espanola", "gazpacho", "pintxos", "pan con tomate", "manchego",
+        "garlic shrimp", "gambas al ajillo", "pulpo", "octopus", "chorizo",
+        "sangria", "wine", "rioja", "cava", "calamari",
+        "fried squid", "seafood", "prawns", "aioli", "flan",
+        "churros", "hot chocolate", "basque cheesecake", "cheesecake", "tarta",
+    ],
+
+    # seafood (category)
+    "seafood": [
+        "fish", "fish and chips", "shrimp", "prawns", "lobster",
+        "crab", "oysters", "clam chowder", "clam", "mussels",
+        "scallops", "ceviche", "poke", "sashimi", "grilled fish",
+        "fried fish", "salmon", "tuna", "ahi", "halibut",
+        "cioppino", "seafood boil", "crab boil", "shrimp boil", "seafood platter",
+        "calamari", "octopus", "squid", "fish tacos", "shrimp tacos",
+    ],
+
+    # cajun / creole
+    "cajun": [
+        "gumbo", "jambalaya", "crawfish", "shrimp", "po boy",
+        "etouffee", "red beans and rice", "dirty rice", "fried catfish", "catfish",
+        "blackened", "cajun", "creole", "boil", "seafood boil",
+        "crab", "corn", "sausage", "andouille", "beignets",
+        "boudin", "grits", "shrimp and grits", "oyster", "fried oysters",
+        "hot sauce", "cajun fries", "crawfish pie", "praline", "bread pudding",
+    ],
+    "cajun/creole": [
+        "gumbo", "jambalaya", "crawfish", "po boy", "etouffee",
+        "red beans and rice", "dirty rice", "blackened", "andouille", "boudin",
+        "shrimp and grits", "fried catfish", "seafood boil", "crab boil", "oysters",
+        "fried oysters", "corn", "sausage", "hot sauce", "cajun",
+        "creole", "beignets", "pralines", "bread pudding", "banana pudding",
+        "catfish", "shrimp", "crab", "rice", "gumbo ya ya",
+    ],
+    "creole": [
+        "gumbo", "jambalaya", "etouffee", "red beans and rice", "dirty rice",
+        "shrimp", "crab", "oysters", "po boy", "andouille",
+        "blackened", "creole", "cajun", "hot sauce", "beignets",
+        "bread pudding", "pralines", "catfish", "boil", "seafood boil",
+        "corn", "sausage", "grits", "shrimp and grits", "rice",
+        "fried oysters", "fried catfish", "gumbo", "jambalaya", "etouffee", "po boy",
+    ],
+
+    # filipino
+    "filipino": [
+        "adobo", "chicken adobo", "pork adobo", "sinigang", "sisig",
+        "lechon", "lechon kawali", "kare kare", "pancit", "pancit bihon",
+        "lumpia", "bbq skewers", "tocino", "longganisa", "tapsilog",
+        "silog", "garlic rice", "halo halo", "ube", "ube ice cream",
+        "caldereta", "dinuguan", "bulalo", "tinola", "bistek",
+        "kakanin", "puto", "bibingka", "ensaymada", "milk tea",
+    ],
+
+    # peruvian
+    "peruvian": [
+        "ceviche", "lomo saltado", "aji de gallina", "pollo a la brasa", "anticuchos",
+        "causa", "papa a la huancaina", "arroz con mariscos", "tallarines", "chicha morada",
+        "pisco sour", "rocoto", "aji amarillo", "tiradito", "chaufa",
+        "seafood", "octopus", "shrimp", "prawn", "steak",
+        "rice", "beans", "plantains", "empanada", "soup",
+        "grilled chicken", "salsa", "spicy", "dessert", "ceviche mixto",
+    ],
+
+    # breakfast (meal-type people still search)
+    "breakfast": [
+        "pancakes", "waffles", "french toast", "biscuits and gravy", "omelet",
+        "eggs benedict", "hash browns", "breakfast burrito", "breakfast sandwich", "avocado toast",
+        "scramble", "bacon", "sausage", "breakfast plate", "granola",
+        "yogurt", "fruit", "bagel", "cream cheese", "coffee",
+        "latte", "cappuccino", "mimosas", "bloody mary", "brunch",
+        "chilaquiles", "home fries", "toast", "grits", "oatmeal",
+    ],
+
+    # steak
+    "steak": [
+        "ribeye", "new york strip", "filet mignon", "prime rib", "sirloin",
+        "steak frites", "skirt steak", "hanger steak", "t bone", "porterhouse",
+        "chimichurri", "au poivre", "mashed potatoes", "baked potato", "creamed spinach",
+        "asparagus", "mac and cheese", "lobster tail", "surf and turf", "bone in ribeye",
+        "steak sandwich", "carpaccio", "tartare", "caesar salad", "wedge salad",
+        "bread", "wine", "old fashioned", "martini", "peppercorn",
+    ],
+
+    # fried chicken
+    "fried chicken": [
+        "fried chicken", "hot chicken", "chicken sandwich", "spicy chicken sandwich", "wings",
+        "tenders", "chicken and waffles", "biscuits", "mac and cheese", "collard greens",
+        "cornbread", "gravy", "mashed potatoes", "fries", "slaw",
+        "honey", "hot honey", "ranch", "blue cheese", "bbq sauce",
+        "buffalo", "nashville", "spicy", "mild", "extra crispy",
+        "dark meat", "white meat", "combo", "family meal", "banana pudding",
+    ],
+
+    # drinks (new: “what to order” coverage; no brands)
     "drinks": [
-        "coffee",
-        "iced coffee",
-        "cold brew",
-        "latte",
-        "cappuccino",
-        "espresso",
-        "matcha",
-        "chai",
-        "boba",
-        "thai tea",
-        "milk tea",
-        "lemonade",
-        "agua fresca",
-        "horchata",
-        "smoothie",
-        "shake",
-        "milkshake",
-        "mocktail",
-        "cocktail",
-        "margarita",
-        "paloma",
-        "mojito",
-        "old fashioned",
-        "martini",
-        "negroni",
-        "beer",
-        "craft beer",
-        "ipa",
-        "wine",
-        "sangria",
+        "coffee", "iced coffee", "cold brew", "latte", "cappuccino",
+        "espresso", "americano", "matcha", "chai", "boba",
+        "milk tea", "thai tea", "lemonade", "agua fresca", "horchata",
+        "smoothie", "shake", "milkshake", "mocktail", "cocktail",
+        "margarita", "paloma", "mojito", "old fashioned", "martini",
+        "negroni", "spritz", "beer", "craft beer", "ipa",
     ],
 }
 
@@ -183,7 +423,12 @@ def haversine_m(lat1, lon1, lat2, lon2) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 def places_text_search(query: str, center: dict | None = None, radius_m: int | None = None) -> list[dict]:
-    """Google Places Text Search (New Places API) with OPTIONAL location bias."""
+    """
+    Google Places Text Search (New Places API) with OPTIONAL location bias.
+
+    IMPORTANT: We include businessStatus + currentOpeningHours.openNow
+    so we can silently drop closed places.
+    """
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
         "Content-Type": "application/json",
@@ -198,7 +443,8 @@ def places_text_search(query: str, center: dict | None = None, radius_m: int | N
             "places.primaryType,"
             "places.types,"
             "places.location,"
-            "places.businessStatus"
+            "places.businessStatus,"
+            "places.currentOpeningHours.openNow"
         ),
     }
     body = {"textQuery": query}
@@ -334,6 +580,24 @@ def matches_type_lock(place: dict, allowed: set[str] | None) -> bool:
         return True
     return any(t in allowed for t in types)
 
+def is_closed_place(p: dict) -> bool:
+    """
+    Silent closed-place filter.
+    - Drop permanently closed or temporarily closed.
+    - If openNow exists and is False, drop it.
+    If Google doesn't provide these fields, we don't drop (avoid false negatives).
+    """
+    status = (p.get("businessStatus") or "").strip().upper()
+    if status in {"CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"}:
+        return True
+
+    coh = p.get("currentOpeningHours") or {}
+    open_now = coh.get("openNow")
+    if open_now is False:
+        return True
+
+    return False
+
 def why_line(mode: str, name: str, rating: float, reviews: int) -> str:
     mode = (mode or "").lower().strip()
     key = f"{mode}|{name}|{rating}|{reviews}"
@@ -428,15 +692,13 @@ def build_picks(
 ) -> list[dict]:
     filtered = []
     for p in places:
+        # ✅ SILENTLY DROP CLOSED PLACES
+        if is_closed_place(p):
+            continue
+
         name = ((p.get("displayName") or {}).get("text") or "").strip()
         if not name:
             continue
-
-        # ✅ Silently remove closed places
-        status = (p.get("businessStatus") or "").strip().upper()
-        if status in ("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"):
-            continue
-
         if is_chain(name):
             continue
         if not matches_type_lock(p, allowed_types):
@@ -548,19 +810,24 @@ def lrs(
         return {"error": "Missing GOOGLE_PLACES_API_KEY"}
 
     mode = (mode or "strict").lower().strip()
-    base = f"{(cuisine + ' ') if cuisine else ''}restaurants in {location}".strip()
+    cuisine_clean = (cuisine or "").strip()
+
+    # Special: if user picks "drinks", do not add the word "restaurants"
+    if cuisine_clean.lower() == "drinks":
+        base = f"drinks in {location}".strip()
+    else:
+        base = f"{(cuisine_clean + ' ') if cuisine_clean else ''}restaurants in {location}".strip()
 
     strict_query = f"best {base}".strip()
     best_query = base
     hype_query = f"popular {base}".strip()
 
-    allowed_types = cuisine_lock_types(cuisine)
+    allowed_types = cuisine_lock_types(cuisine_clean)
 
     # Resolve location center once (lets us keep results actually near the user)
     center = location_center_from_text(location)
 
     # TRUST HARDENING (DISTANCE): If we can't resolve a real center point, do NOT guess.
-    # Without center, Google can return far-away matches and we can't enforce the 25-mile cap.
     if not center:
         return {
             "query": base,
@@ -604,7 +871,7 @@ def lrs(
                 strict_picks = strict_picks_wide[:5]
                 limitation = "This area is limited for that search, so I widened the search up to 10 miles."
 
-        add_order_from_reviews(strict_picks, cuisine)
+        add_order_from_reviews(strict_picks, cuisine_clean)
         for p in strict_picks:
             p["why"] = why_line("strict", p["name"], float(p["rating"]), int(p["reviews"]))
             p.pop("key", None)
@@ -641,7 +908,7 @@ def lrs(
 
         picks = prefer_new_first(picks, strict_keys)
 
-        add_order_from_reviews(picks, cuisine)
+        add_order_from_reviews(picks, cuisine_clean)
         for p in picks:
             p["why"] = why_line("best", p["name"], float(p["rating"]), int(p["reviews"]))
             p.pop("key", None)
@@ -679,14 +946,14 @@ def lrs(
 
         picks = prefer_new_first(picks, strict_keys)
 
-        add_order_from_reviews(picks, cuisine)
+        add_order_from_reviews(picks, cuisine_clean)
         for p in picks:
             p["why"] = why_line("hype", p["name"], float(p["rating"]), int(p["reviews"]))
             p.pop("key", None)
             p.pop("place_id", None)
 
         if used_wide:
-            limitation = f"{hype_distance_line(location, cuisine)} Showing hype picks up to 25 miles."
+            limitation = f"{hype_distance_line(location, cuisine_clean)} Showing hype picks up to 25 miles."
 
         return {
             "query": hype_query,
