@@ -1,3 +1,4 @@
+```python
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -419,7 +420,7 @@ def haversine_m(lat1, lon1, lat2, lon2) -> float:
     p2 = math.radians(lat2)
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(p1)*cos(p2)*math.sin(dlon/2)**2
+    a = math.sin(dlat/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dlon/2)**2
     return 2 * R * math.asin(math.sqrt(a))
 
 def places_text_search(query: str, center: dict | None = None, radius_m: int | None = None) -> list[dict]:
@@ -865,7 +866,19 @@ def lrs(
             "mode_label": mode_label(mode),
             "picks": [],
             "limitation_note": "I couldn’t confidently interpret that location. Try adding a nearby city/state (example: 'Downtown San Jose, CA').",
-            "debug": {"mode": mode, "mode_label": mode_label(mode), "center_resolved": False, "final_count": 0}
+            "debug": {
+                "mode": mode,
+                "mode_label": mode_label(mode),
+                "center_resolved": False,
+                "final_count": 0,
+                "query_base": base,
+                "strict_query": strict_query,
+                "best_query": best_query,
+                "hype_query": hype_query,
+                "cuisine": cuisine_clean,
+                "type_lock_active": bool(allowed_types),
+                "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+            }
         }
 
     # Locked radius rules (mode-based)
@@ -878,9 +891,14 @@ def lrs(
     HYPE_PRIMARY = miles_to_meters(10)
     HYPE_MAX = miles_to_meters(25)
 
+    center_dbg = {
+        "latitude": round(float(center["latitude"]), 6),
+        "longitude": round(float(center["longitude"]), 6),
+    }
+
     # Strict baseline (used for overlap keys) — keep it within strict primary range
     strict_places = places_text_search(strict_query, center=center, radius_m=STRICT_PRIMARY)
-    strict_picks, _ = build_with_type_fallback(
+    strict_picks, strict_type_lock_fallback_used = build_with_type_fallback(
         strict_places, 4.3, 150, score_lrs, allowed_types, 3,
         center=center, max_radius_m=STRICT_PRIMARY
     )
@@ -890,16 +908,22 @@ def lrs(
     if mode == "strict":
         limitation = None
 
+        strict_used_wide = False
+        strict_places_wide_len = None
+        strict_type_lock_fallback_used_wide = None
+
         # If strict returns too few, widen only up to 10 miles (locked max)
         if len(strict_picks) < 3:
             strict_places_wide = places_text_search(strict_query, center=center, radius_m=STRICT_MAX)
-            strict_picks_wide, _ = build_with_type_fallback(
+            strict_places_wide_len = len(strict_places_wide)
+            strict_picks_wide, strict_type_lock_fallback_used_wide = build_with_type_fallback(
                 strict_places_wide, 4.3, 150, score_lrs, allowed_types, 3,
                 center=center, max_radius_m=STRICT_MAX
             )
             if len(strict_picks_wide) > len(strict_picks):
                 strict_picks = strict_picks_wide[:5]
                 limitation = "This area is limited for that search, so I widened the search up to 10 miles."
+                strict_used_wide = True
 
         add_order_from_reviews(strict_picks, cuisine_clean)
         for p in strict_picks:
@@ -913,28 +937,59 @@ def lrs(
             "mode_label": mode_label(mode),
             "picks": strict_picks,
             "limitation_note": limitation,
-            "debug": {"mode": mode, "mode_label": mode_label(mode), "final_count": len(strict_picks)}
+            "debug": {
+                "mode": mode,
+                "mode_label": mode_label(mode),
+                "center_resolved": True,
+                "center": center_dbg,
+                "query_base": base,
+                "strict_query": strict_query,
+                "best_query": best_query,
+                "hype_query": hype_query,
+                "cuisine": cuisine_clean,
+                "type_lock_active": bool(allowed_types),
+                "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+                "radius_m": {
+                    "primary": STRICT_PRIMARY,
+                    "max": STRICT_MAX,
+                    "used": (STRICT_MAX if strict_used_wide else STRICT_PRIMARY),
+                },
+                "raw_counts": {
+                    "primary": len(strict_places),
+                    "wide": strict_places_wide_len,
+                },
+                "type_lock_fallback_used": strict_type_lock_fallback_used,
+                "type_lock_fallback_used_wide": strict_type_lock_fallback_used_wide,
+                "widened": strict_used_wide,
+                "final_count": len(strict_picks),
+            }
         }
 
     if mode == "best":
         limitation = None
 
         best_places = places_text_search(best_query, center=center, radius_m=BEST_PRIMARY)
-        picks, _ = build_with_type_fallback(
+        picks, best_type_lock_fallback_used = build_with_type_fallback(
             best_places, 4.1, 30, score_lrs, allowed_types, 3,
             center=center, max_radius_m=BEST_PRIMARY
         )
 
+        best_used_wide = False
+        best_places_wide_len = None
+        best_type_lock_fallback_used_wide = None
+
         # If too few, widen only up to 15 miles (locked max)
         if len(picks) < 3:
             best_places_wide = places_text_search(best_query, center=center, radius_m=BEST_MAX)
-            picks_wide, _ = build_with_type_fallback(
+            best_places_wide_len = len(best_places_wide)
+            picks_wide, best_type_lock_fallback_used_wide = build_with_type_fallback(
                 best_places_wide, 4.1, 30, score_lrs, allowed_types, 3,
                 center=center, max_radius_m=BEST_MAX
             )
             if len(picks_wide) > len(picks):
                 picks = picks_wide
                 limitation = "This area is limited for that search, so I widened the search up to 15 miles."
+                best_used_wide = True
 
         picks = prefer_new_first(picks, strict_keys)
 
@@ -950,23 +1005,52 @@ def lrs(
             "mode_label": mode_label(mode),
             "picks": picks,
             "limitation_note": limitation,
-            "debug": {"mode": mode, "mode_label": mode_label(mode), "final_count": len(picks)}
+            "debug": {
+                "mode": mode,
+                "mode_label": mode_label(mode),
+                "center_resolved": True,
+                "center": center_dbg,
+                "query_base": base,
+                "strict_query": strict_query,
+                "best_query": best_query,
+                "hype_query": hype_query,
+                "cuisine": cuisine_clean,
+                "type_lock_active": bool(allowed_types),
+                "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+                "radius_m": {
+                    "primary": BEST_PRIMARY,
+                    "max": BEST_MAX,
+                    "used": (BEST_MAX if best_used_wide else BEST_PRIMARY),
+                },
+                "raw_counts": {
+                    "primary": len(best_places),
+                    "wide": best_places_wide_len,
+                },
+                "type_lock_fallback_used": best_type_lock_fallback_used,
+                "type_lock_fallback_used_wide": best_type_lock_fallback_used_wide,
+                "widened": best_used_wide,
+                "final_count": len(picks),
+            }
         }
 
     if mode == "hype":
         limitation = None
 
         hype_places = places_text_search(hype_query, center=center, radius_m=HYPE_PRIMARY)
-        picks, _ = build_with_type_fallback(
+        picks, hype_type_lock_fallback_used = build_with_type_fallback(
             hype_places, 4.0, 80, score_hype, allowed_types, 3,
             center=center, max_radius_m=HYPE_PRIMARY
         )
 
         # If too few, widen up to 25 miles (locked max for Hype)
         used_wide = False
+        hype_places_wide_len = None
+        hype_type_lock_fallback_used_wide = None
+
         if len(picks) < 3:
             hype_places_wide = places_text_search(hype_query, center=center, radius_m=HYPE_MAX)
-            picks_wide, _ = build_with_type_fallback(
+            hype_places_wide_len = len(hype_places_wide)
+            picks_wide, hype_type_lock_fallback_used_wide = build_with_type_fallback(
                 hype_places_wide, 3.8, 20, score_hype, allowed_types, 3,
                 center=center, max_radius_m=HYPE_MAX
             )
@@ -991,7 +1075,33 @@ def lrs(
             "mode_label": mode_label(mode),
             "picks": picks,
             "limitation_note": limitation,
-            "debug": {"mode": mode, "mode_label": mode_label(mode), "final_count": len(picks)}
+            "debug": {
+                "mode": mode,
+                "mode_label": mode_label(mode),
+                "center_resolved": True,
+                "center": center_dbg,
+                "query_base": base,
+                "strict_query": strict_query,
+                "best_query": best_query,
+                "hype_query": hype_query,
+                "cuisine": cuisine_clean,
+                "type_lock_active": bool(allowed_types),
+                "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+                "radius_m": {
+                    "primary": HYPE_PRIMARY,
+                    "max": HYPE_MAX,
+                    "used": (HYPE_MAX if used_wide else HYPE_PRIMARY),
+                },
+                "raw_counts": {
+                    "primary": len(hype_places),
+                    "wide": hype_places_wide_len,
+                },
+                "type_lock_fallback_used": hype_type_lock_fallback_used,
+                "type_lock_fallback_used_wide": hype_type_lock_fallback_used_wide,
+                "widened": used_wide,
+                "final_count": len(picks),
+            }
         }
 
     return {"error": "mode must be: strict, best, or hype"}
+```
