@@ -419,7 +419,7 @@ def haversine_m(lat1, lon1, lat2, lon2) -> float:
     p2 = math.radians(lat2)
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dlon/2)**2
+    a = math.sin(dlat/2)**2 + math.cos(p1)*cos(p2)*math.sin(dlon/2)**2
     return 2 * R * math.asin(math.sqrt(a))
 
 def places_text_search(query: str, center: dict | None = None, radius_m: int | None = None) -> list[dict]:
@@ -799,6 +799,36 @@ def add_order_from_reviews(picks: list[dict], cuisine: str | None):
 def hype_distance_line(location: str, cuisine: str | None) -> str:
     key = f"hype_distance|{(location or '').strip().lower()}|{(cuisine or '').strip().lower()}"
     return HYPE_DISTANCE_LINES[stable_pick_index(key, len(HYPE_DISTANCE_LINES))]
+
+# ✅ NEW: /suggest endpoint (added WITHOUT changing anything else)
+@app.get("/suggest")
+def suggest(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(6, ge=1, le=10),
+):
+    if not GOOGLE_KEY:
+        return {"error": "Missing GOOGLE_PLACES_API_KEY"}
+
+    try:
+        places = places_text_search(q, center=None, radius_m=None)
+        suggestions = []
+
+        for p in places[:limit]:
+            name = ((p.get("displayName") or {}).get("text") or "").strip()
+            addr = (p.get("formattedAddress") or "").strip()
+            if not (name or addr):
+                continue
+
+            label = addr if addr else name
+            suggestions.append({
+                "label": label,
+                "name": name,
+                "address": addr,
+            })
+
+        return {"q": q, "suggestions": suggestions}
+    except Exception:
+        return {"q": q, "suggestions": []}
 
 @app.get("/lrs")
 def lrs(
