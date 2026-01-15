@@ -520,10 +520,39 @@ def hype_reason(rating: float, reviews: int) -> str:
         return "Decent buzz: good review volume for this area."
     return "Some buzz: not huge, but trending-ish locally."
 
+# ✅ Dish/synonym aliases to future-proof small towns + user phrasing
+# Important: aliases only change the type-lock key + dish keyword key. We do NOT change widening.
+CUISINE_ALIASES = {
+    # dish → cuisine
+    "pho": "pho",  # keep explicit lock
+    "banh mi": "vietnamese",
+    "banhmi": "vietnamese",
+    "viet": "vietnamese",
+    "vietnam": "vietnamese",
+    "bbq": "bbq",
+    "barbecue": "bbq",
+    "burger": "burgers",
+    "hamburger": "burgers",
+    "taco": "tacos",
+    "burrito": "mexican",
+    "sashimi": "sushi",
+    "noodles": "ramen",
+}
+
+# ✅ non-food categories (trust: never fall back to restaurants)
+NON_FOOD_CATEGORIES = {"barber", "haircut", "coffee", "pharmacy", "park", "grocery", "drinks"}
+
+def canonical_cuisine(cuisine: str | None) -> str:
+    c = (cuisine or "").strip().lower()
+    if not c:
+        return ""
+    return CUISINE_ALIASES.get(c, c)
+
 def cuisine_lock_types(cuisine: str | None) -> set[str] | None:
-    if not cuisine:
+    c = canonical_cuisine(cuisine)
+    if not c:
         return None
-    return CUISINE_TYPE_LOCK.get(cuisine.strip().lower())
+    return CUISINE_TYPE_LOCK.get(c)
 
 def matches_type_lock(place: dict, allowed: set[str] | None) -> bool:
     if not allowed:
@@ -595,7 +624,7 @@ def most_mentioned_dish(review_texts: list[str], cuisine: str | None) -> str | N
     if not review_texts:
         return None
 
-    c = (cuisine or "").strip().lower()
+    c = canonical_cuisine(cuisine)
     keywords = DISH_KEYWORDS.get(c)
 
     if not keywords:
@@ -736,9 +765,10 @@ def build_with_type_fallback(
     want_at_least: int = 3,
     center: dict | None = None,
     max_radius_m: int | None = None,
+    allow_type_fallback: bool = True,
 ) -> tuple[list[dict], bool]:
     picks = build_picks(places, min_rating, min_reviews, sorter, allowed_types, center, max_radius_m)
-    if allowed_types and len(picks) < want_at_least:
+    if allow_type_fallback and allowed_types and len(picks) < want_at_least:
         picks = build_picks(places, min_rating, min_reviews, sorter, None, center, max_radius_m)
         return picks, True
     return picks, False
@@ -751,7 +781,7 @@ def add_order_from_reviews(picks: list[dict], cuisine: str | None):
         p["order"] = order_line(p.get("name", ""), dish)
 
 def hype_distance_line(location: str, cuisine: str | None) -> str:
-    key = f"hype_distance|{(location or '').strip().lower()}|{(cuisine or '').strip().lower()}"
+    key = f"hype_distance|{(location or '').strip().lower()}|{canonical_cuisine(cuisine)}"
     return HYPE_DISTANCE_LINES[stable_pick_index(key, len(HYPE_DISTANCE_LINES))]
 
 # ✅ Minimal backend filtering for location-like suggestions
@@ -822,11 +852,11 @@ def lrs(
         return {"error": "Missing GOOGLE_PLACES_API_KEY"}
 
     mode = (mode or "strict").lower().strip()
-    cuisine_clean = (cuisine or "").strip()
+    cuisine_clean_raw = (cuisine or "").strip()
+    cuisine_clean = canonical_cuisine(cuisine_clean_raw)
 
     # ✅ Fix non-food queries: avoid "barber restaurants in LA"
-    NON_FOOD_CATEGORIES = {"barber", "haircut", "coffee", "pharmacy", "park", "grocery", "drinks"}
-    is_non_food = cuisine_clean.lower() in NON_FOOD_CATEGORIES
+    is_non_food = cuisine_clean in NON_FOOD_CATEGORIES
 
     if is_non_food:
         base = f"{cuisine_clean} in {location}".strip()
@@ -860,6 +890,7 @@ def lrs(
                 "best_query": best_query,
                 "hype_query": hype_query,
                 "cuisine": cuisine_clean,
+                "cuisine_raw": cuisine_clean_raw,
                 "type_lock_active": bool(allowed_types),
                 "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
             }
@@ -882,9 +913,14 @@ def lrs(
 
     # Strict baseline (used for overlap keys) — keep it within strict primary range
     strict_places = places_text_search(strict_query, center=center, radius_m=STRICT_PRIMARY)
+
+    # ✅ Non-food purity: never allow type-lock fallback for non-food.
+    allow_type_fallback = not is_non_food
+
     strict_picks, strict_type_lock_fallback_used = build_with_type_fallback(
         strict_places, 4.3, 150, score_lrs, allowed_types, 3,
-        center=center, max_radius_m=STRICT_PRIMARY
+        center=center, max_radius_m=STRICT_PRIMARY,
+        allow_type_fallback=allow_type_fallback
     )
     strict_picks = strict_picks[:5]
     strict_keys = set([p["key"] for p in strict_picks])
@@ -902,7 +938,8 @@ def lrs(
             strict_places_wide_len = len(strict_places_wide)
             strict_picks_wide, strict_type_lock_fallback_used_wide = build_with_type_fallback(
                 strict_places_wide, 4.3, 150, score_lrs, allowed_types, 3,
-                center=center, max_radius_m=STRICT_MAX
+                center=center, max_radius_m=STRICT_MAX,
+                allow_type_fallback=allow_type_fallback
             )
             if len(strict_picks_wide) > len(strict_picks):
                 strict_picks = strict_picks_wide[:5]
@@ -931,6 +968,8 @@ def lrs(
                 "best_query": best_query,
                 "hype_query": hype_query,
                 "cuisine": cuisine_clean,
+                "cuisine_raw": cuisine_clean_raw,
+                "is_non_food": is_non_food,
                 "type_lock_active": bool(allowed_types),
                 "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
                 "radius_m": {
@@ -952,18 +991,35 @@ def lrs(
     if mode == "best":
         limitation = None
 
-        # ✅ Small-town dish fallback: pho can be rare + low review count
+        best_places = places_text_search(best_query, center=center, radius_m=BEST_PRIMARY)
+
+        # Default thresholds
         best_min_rating = 4.1
         best_min_reviews = 30
-        if cuisine_clean.strip().lower() == "pho":
-            best_min_rating = 3.9
-            best_min_reviews = 5
 
-        best_places = places_text_search(best_query, center=center, radius_m=BEST_PRIMARY)
+        # Build with normal thresholds first
         picks, best_type_lock_fallback_used = build_with_type_fallback(
             best_places, best_min_rating, best_min_reviews, score_lrs, allowed_types, 3,
-            center=center, max_radius_m=BEST_PRIMARY
+            center=center, max_radius_m=BEST_PRIMARY,
+            allow_type_fallback=allow_type_fallback
         )
+
+        # ✅ Small-town recovery (food only, no widening):
+        # If we got 0–1 picks, relax thresholds a bit to allow the "only one place in town".
+        small_town_recovery_used = False
+        if (not is_non_food) and (len(picks) <= 1) and cuisine_clean:
+            relaxed_min_rating = 3.8
+            relaxed_min_reviews = 5
+
+            picks_relaxed, best_type_lock_fallback_used_relaxed = build_with_type_fallback(
+                best_places, relaxed_min_rating, relaxed_min_reviews, score_lrs, allowed_types, 1,
+                center=center, max_radius_m=BEST_PRIMARY,
+                allow_type_fallback=allow_type_fallback
+            )
+            if len(picks_relaxed) > len(picks):
+                picks = picks_relaxed
+                best_type_lock_fallback_used = best_type_lock_fallback_used_relaxed
+                small_town_recovery_used = True
 
         best_used_wide = False
         best_places_wide_len = None
@@ -975,7 +1031,8 @@ def lrs(
             best_places_wide_len = len(best_places_wide)
             picks_wide, best_type_lock_fallback_used_wide = build_with_type_fallback(
                 best_places_wide, best_min_rating, best_min_reviews, score_lrs, allowed_types, 3,
-                center=center, max_radius_m=BEST_MAX
+                center=center, max_radius_m=BEST_MAX,
+                allow_type_fallback=allow_type_fallback
             )
             if len(picks_wide) > len(picks):
                 picks = picks_wide
@@ -989,6 +1046,9 @@ def lrs(
             p["why"] = why_line("best", p["name"], float(p["rating"]), int(p["reviews"]))
             p.pop("key", None)
             p.pop("place_id", None)
+
+        if small_town_recovery_used and not limitation:
+            limitation = "This looks like a small-market search, so I allowed lower review counts to include the best local match."
 
         return {
             "query": best_query,
@@ -1006,8 +1066,12 @@ def lrs(
                 "best_query": best_query,
                 "hype_query": hype_query,
                 "cuisine": cuisine_clean,
+                "cuisine_raw": cuisine_clean_raw,
+                "is_non_food": is_non_food,
                 "type_lock_active": bool(allowed_types),
                 "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+                "allow_type_fallback": allow_type_fallback,
+                "small_town_recovery_used": small_town_recovery_used,
                 "radius_m": {
                     "primary": BEST_PRIMARY,
                     "max": BEST_MAX,
@@ -1030,7 +1094,8 @@ def lrs(
         hype_places = places_text_search(hype_query, center=center, radius_m=HYPE_PRIMARY)
         picks, hype_type_lock_fallback_used = build_with_type_fallback(
             hype_places, 4.0, 80, score_hype, allowed_types, 3,
-            center=center, max_radius_m=HYPE_PRIMARY
+            center=center, max_radius_m=HYPE_PRIMARY,
+            allow_type_fallback=allow_type_fallback
         )
 
         # If too few, widen up to 25 miles (locked max for Hype)
@@ -1043,7 +1108,8 @@ def lrs(
             hype_places_wide_len = len(hype_places_wide)
             picks_wide, hype_type_lock_fallback_used_wide = build_with_type_fallback(
                 hype_places_wide, 3.8, 20, score_hype, allowed_types, 3,
-                center=center, max_radius_m=HYPE_MAX
+                center=center, max_radius_m=HYPE_MAX,
+                allow_type_fallback=allow_type_fallback
             )
             if len(picks_wide) > len(picks):
                 picks = picks_wide
@@ -1076,8 +1142,11 @@ def lrs(
                 "best_query": best_query,
                 "hype_query": hype_query,
                 "cuisine": cuisine_clean,
+                "cuisine_raw": cuisine_clean_raw,
+                "is_non_food": is_non_food,
                 "type_lock_active": bool(allowed_types),
                 "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
+                "allow_type_fallback": allow_type_fallback,
                 "radius_m": {
                     "primary": HYPE_PRIMARY,
                     "max": HYPE_MAX,
