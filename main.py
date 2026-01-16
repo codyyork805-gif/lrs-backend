@@ -474,7 +474,8 @@ def places_text_search(query: str, center: dict | None = None, radius_m: int | N
             "places.types,"
             "places.location,"
             "places.businessStatus,"
-            "places.currentOpeningHours.openNow"
+            "places.currentOpeningHours.openNow,"
+            "places.photos"
         ),
     }
     body = {"textQuery": query}
@@ -629,15 +630,19 @@ def matches_type_lock(place: dict, allowed: set[str] | None) -> bool:
 def is_closed_place(p: dict) -> bool:
     """
     Silent closed-place filter.
-
-    ✅ FIX (minimal, targeted):
-    - We ONLY drop places that Google marks as CLOSED_PERMANENTLY or CLOSED_TEMPORARILY.
-    - We do NOT drop places just because openNow is False.
-      (That can cause legitimate places to disappear depending on time-of-day/hours data.)
+    - Drop permanently closed or temporarily closed.
+    - If openNow exists and is False, drop it.
+    If Google doesn't provide these fields, we don't drop (avoid false negatives).
     """
     status = (p.get("businessStatus") or "").strip().upper()
     if status in {"CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"}:
         return True
+
+    coh = p.get("currentOpeningHours") or {}
+    open_now = coh.get("openNow")
+    if open_now is False:
+        return True
+
     return False
 
 def why_line(mode: str, name: str, rating: float, reviews: int) -> str:
@@ -785,6 +790,14 @@ def build_picks(
                 d_m = haversine_m(center["latitude"], center["longitude"], float(lat), float(lon))
                 distance_miles = round(meters_to_miles(d_m), 1)
 
+        # ✅ PHOTO URL (short-lived, but fine for immediate display)
+        photo_url = None
+        photos = p.get("photos") or []
+        if photos:
+            photo_ref = (photos[0] or {}).get("name")
+            if photo_ref:
+                photo_url = f"https://places.googleapis.com/v1/{photo_ref}/media?maxHeightPx=400&key={GOOGLE_KEY}"
+
         picks.append({
             "key": key_for(p),
             "place_id": pid,
@@ -800,6 +813,7 @@ def build_picks(
             "also_in_strict": False,
             "hype_reason": hype_reason(rating, reviews),
             "distance_miles": distance_miles,
+            "photo_url": photo_url,
         })
 
     return picks
@@ -898,7 +912,6 @@ def _suggest_cache_set(key: str, value):
     except Exception:
         pass
 
-
 # ✅ /suggest endpoint
 @app.get("/suggest")
 def suggest(
@@ -913,8 +926,6 @@ def suggest(
     ck = _suggest_cache_key(q, limit)
     cached = _suggest_cache_get(ck)
     if cached is not None:
-        # optional: log cache hit (commented to keep noise low)
-        # log_event("suggest_cache_hit", q=q, limit=limit)
         return {"q": q, "suggestions": cached}
 
     try:
@@ -940,9 +951,7 @@ def suggest(
             if len(suggestions) >= limit:
                 break
 
-        # ✅ cache set
         _suggest_cache_set(ck, suggestions)
-
         return {"q": q, "suggestions": suggestions}
     except Exception:
         return {"q": q, "suggestions": []}
@@ -1009,7 +1018,6 @@ def lrs(
             "type_lock_active": bool(allowed_types),
             "allowed_types": sorted(list(allowed_types)) if allowed_types else None,
         }
-        # ✅ observability
         log_event(
             "location_unresolved",
             location=location,
@@ -1114,7 +1122,6 @@ def lrs(
             "final_count": len(strict_picks),
         }
 
-        # ✅ observability: log empty results
         if len(strict_picks) == 0:
             log_event(
                 "zero_results",
@@ -1149,7 +1156,6 @@ def lrs(
             best_min_reviews = 1
             want_at_least = 1
         if is_non_food:
-            # non-food should be strict about types; return fewer rather than wrong
             want_at_least = 1
 
         best_places = places_text_search(best_query, center=center, radius_m=BEST_PRIMARY)
@@ -1221,7 +1227,6 @@ def lrs(
             "final_count": len(picks),
         }
 
-        # ✅ observability: log empty results
         if len(picks) == 0:
             log_event(
                 "zero_results",
@@ -1310,7 +1315,6 @@ def lrs(
             "final_count": len(picks),
         }
 
-        # ✅ observability: log empty results
         if len(picks) == 0:
             log_event(
                 "zero_results",
