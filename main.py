@@ -629,19 +629,15 @@ def matches_type_lock(place: dict, allowed: set[str] | None) -> bool:
 def is_closed_place(p: dict) -> bool:
     """
     Silent closed-place filter.
-    - Drop permanently closed or temporarily closed.
-    - If openNow exists and is False, drop it.
-    If Google doesn't provide these fields, we don't drop (avoid false negatives).
+
+    ✅ FIX (minimal, targeted):
+    - We ONLY drop places that Google marks as CLOSED_PERMANENTLY or CLOSED_TEMPORARILY.
+    - We do NOT drop places just because openNow is False.
+      (That can cause legitimate places to disappear depending on time-of-day/hours data.)
     """
     status = (p.get("businessStatus") or "").strip().upper()
     if status in {"CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"}:
         return True
-
-    coh = p.get("currentOpeningHours") or {}
-    open_now = coh.get("openNow")
-    if open_now is False:
-        return True
-
     return False
 
 def why_line(mode: str, name: str, rating: float, reviews: int) -> str:
